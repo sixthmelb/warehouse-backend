@@ -1,66 +1,141 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 📦 Warehouse Management API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistem backend untuk **manajemen gudang** dengan dukungan **multi-gudang**, pencatatan transaksi barang masuk/keluar, audit trail pergerakan stok, dan integrasi vendor.  
+Dibangun menggunakan **Laravel** sebagai backend RESTful API.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 🚀 Fitur Utama
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Manajemen Multi-Gudang**: Satu user bisa mengelola lebih dari satu gudang.
+- **Master Data Barang**: Kategori, item, vendor.
+- **Transaksi Barang IN/OUT**: Stok otomatis bertambah/berkurang.
+- **Audit Trail (Stock Movements)**: Setiap perubahan stok tercatat detail.
+- **Validasi Stok**: Tidak bisa transaksi OUT jika stok kurang.
+- **Laporan Stok & Pergerakan Barang**.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## 🗂 Desain Database
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### **Entitas**
+1. **Users** → Admin/staff gudang.
+2. **Warehouses** → Data gudang.
+3. **Vendors** → Supplier barang.
+4. **Categories** → Kategori item.
+5. **Items** → Master data barang.
+6. **Transactions** → Header transaksi (IN/OUT).
+7. **Transaction_Details** → Detail barang per transaksi.
+8. **Stock_Movements** → Log pergerakan stok (audit trail).
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### **Relasi**
+- **User** `belongsToMany` **Warehouses**
+- **Warehouse** `hasMany` **Transactions**
+- **Vendor** `hasMany` **Transactions** *(khusus IN)*
+- **Category** `hasMany` **Items**
+- **Item** `hasMany` **Transaction_Details**
+- **Transaction** `hasMany` **Transaction_Details**
+- **Item** `hasMany` **Stock_Movements**
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 2000 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## 🔗 API Endpoints
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+### **Authentication**
+| Method | Endpoint        | Deskripsi |
+|--------|-----------------|-----------|
+| POST   | `/api/login`    | Login user & dapatkan token |
+| POST   | `/api/logout`   | Logout user |
+| GET    | `/api/user`     | Profil user login |
 
-### Premium Partners
+### **Warehouses**
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET    | `/api/warehouses` | List semua gudang |
+| POST   | `/api/warehouses` | Tambah gudang baru |
+| PUT    | `/api/warehouses/{id}` | Update gudang |
+| DELETE | `/api/warehouses/{id}` | Hapus gudang |
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[Many](https://www.many.co.uk)**
-- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
-- **[DevSquad](https://devsquad.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[OP.GG](https://op.gg)**
-- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
-- **[Lendio](https://lendio.com)**
+### **Vendors**
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET    | `/api/vendors` | List semua vendor |
+| POST   | `/api/vendors` | Tambah vendor |
+| PUT    | `/api/vendors/{id}` | Update vendor |
+| DELETE | `/api/vendors/{id}` | Hapus vendor |
 
-## Contributing
+### **Items**
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET    | `/api/items` | List semua item |
+| POST   | `/api/items` | Tambah item |
+| PUT    | `/api/items/{id}` | Update item |
+| DELETE | `/api/items/{id}` | Hapus item |
+| GET    | `/api/items/{id}/stock` | Cek stok item |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### **Transactions**
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET    | `/api/transactions` | List semua transaksi |
+| POST   | `/api/transactions` | Buat transaksi baru (IN/OUT) |
+| GET    | `/api/transactions/{id}` | Detail transaksi |
+| PUT    | `/api/transactions/{id}` | Update transaksi |
+| DELETE | `/api/transactions/{id}` | Hapus transaksi |
 
-## Code of Conduct
+### **Reports**
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| GET    | `/api/reports/stock` | Laporan stok semua item |
+| GET    | `/api/reports/movements` | Laporan pergerakan stok |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## 🧠 Business Logic
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+1. **Transaksi IN**
+   - Menambah stok item pada gudang terkait.
+   - Mencatat detail ke tabel `stock_movements`.
 
-## License
+2. **Transaksi OUT**
+   - Mengurangi stok item.
+   - **Validasi:** Tidak bisa jika stok < jumlah permintaan.
+   - Mencatat detail ke tabel `stock_movements`.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+3. **Audit Trail**
+   - Semua perubahan stok tercatat di `stock_movements` (user, tanggal, qty, jenis transaksi).
+
+4. **Multi-Warehouse Support**
+   - Stok item dipisahkan per gudang.
+   - User bisa terhubung ke lebih dari satu gudang.
+
+---
+
+## 🛠 Teknologi
+
+- **Backend:** Laravel (RESTful API)
+- **Database:** MySQL/MariaDB
+- **Autentikasi:** Laravel Sanctum / Passport
+- **Dokumentasi API:** Laravel API Resource / Swagger (opsional)
+- **Testing:** PHPUnit / Pest
+
+---
+
+## 📦 Instalasi
+
+```bash
+# Clone repo
+git clone https://github.com/username/warehouse-api.git
+cd warehouse-api
+
+# Install dependencies
+composer install
+
+# Setup environment
+cp .env.example .env
+php artisan key:generate
+
+# Migrasi database
+php artisan migrate --seed
+
+# Jalankan server
+php artisan serve
