@@ -7,13 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Model TransactionDetail untuk warehouse management system
- * Menyimpan detail item dalam setiap transaksi warehouse
- * 
- * Relationships:
- * - BelongsTo: transaction (transaksi induk)
- * - BelongsTo: item (barang yang ditransaksikan)
- * - HasMany: stockMovements (pergerakan stock akibat detail ini)
+ * Model TransactionDetail untuk warehouse management system - Fixed untuk serah terima
+ * Menyimpan detail item dalam setiap transaksi serah terima warehouse
  * 
  * File: app/Models/TransactionDetail.php
  */
@@ -21,30 +16,27 @@ class TransactionDetail extends Model
 {
     use HasFactory, SoftDeletes;
 
-    /**
-     * Nama tabel di database
-     */
     protected $table = 'transaction_details';
 
-    /**
-     * Field yang bisa di-mass assignment
-     */
     protected $fillable = [
         'transaction_id',
         'item_id',
-        'quantity',
+        'requested_quantity',
+        'approved_quantity',
+        'issued_quantity',
+        'received_quantity',
         'unit',
         'unit_weight',
         'batch_number',
         'serial_number',
         'expiry_date',
         'manufacture_date',
-        'unit_price',
-        'total_price',
-        'discount_percentage',
-        'discount_amount',
-        'tax_percentage',
-        'tax_amount',
+        'unit_cost',
+        'total_cost',
+        'request_reason',
+        'needed_date',
+        'urgency',
+        'usage_purpose',
         'storage_location',
         'storage_zone',
         'storage_rack',
@@ -53,33 +45,38 @@ class TransactionDetail extends Model
         'condition_notes',
         'qc_passed',
         'qc_notes',
+        'is_returnable',
+        'return_due_date',
+        'return_condition_expected',
+        'is_returned',
+        'actual_return_date',
+        'returned_quantity',
         'line_number',
-        'actual_quantity',
-        'variance_reason',
-        'custom_attributes',
         'notes',
+        'custom_attributes',
     ];
 
-    /**
-     * Field yang di-cast ke tipe data tertentu
-     */
     protected $casts = [
         'transaction_id' => 'integer',
         'item_id' => 'integer',
-        'quantity' => 'decimal:2',
+        'requested_quantity' => 'decimal:2',
+        'approved_quantity' => 'decimal:2',
+        'issued_quantity' => 'decimal:2',
+        'received_quantity' => 'decimal:2',
         'unit_weight' => 'decimal:2',
         'expiry_date' => 'date',
         'manufacture_date' => 'date',
-        'unit_price' => 'decimal:2',
-        'total_price' => 'decimal:2',
-        'discount_percentage' => 'decimal:2',
-        'discount_amount' => 'decimal:2',
-        'tax_percentage' => 'decimal:2',
-        'tax_amount' => 'decimal:2',
+        'unit_cost' => 'decimal:2',
+        'total_cost' => 'decimal:2',
+        'needed_date' => 'date',
+        'return_due_date' => 'date',
+        'actual_return_date' => 'date',
+        'returned_quantity' => 'decimal:2',
         'line_number' => 'integer',
-        'actual_quantity' => 'decimal:2',
         'qc_passed' => 'boolean',
-        'custom_attributes' => 'array', // JSON field di-cast ke array
+        'is_returnable' => 'boolean',
+        'is_returned' => 'boolean',
+        'custom_attributes' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -89,16 +86,24 @@ class TransactionDetail extends Model
      * Enum values untuk condition
      */
     const CONDITIONS = [
-        'good' => 'Good Condition',
-        'damaged' => 'Damaged',
-        'expired' => 'Expired',
-        'returned' => 'Returned'
+        'new' => 'Baru',
+        'good' => 'Baik',
+        'fair' => 'Cukup',
+        'damaged' => 'Rusak'
+    ];
+
+    /**
+     * Enum values untuk urgency
+     */
+    const URGENCIES = [
+        'low' => 'Rendah',
+        'normal' => 'Normal',
+        'high' => 'Tinggi',
+        'critical' => 'Kritis'
     ];
 
     /**
      * Relationship: TransactionDetail belongs to transaction
-     * 
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function transaction()
     {
@@ -107,8 +112,6 @@ class TransactionDetail extends Model
 
     /**
      * Relationship: TransactionDetail belongs to item
-     * 
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function item()
     {
@@ -117,8 +120,6 @@ class TransactionDetail extends Model
 
     /**
      * Relationship: TransactionDetail menghasilkan stock movements
-     * 
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
     public function stockMovements()
     {
@@ -127,10 +128,6 @@ class TransactionDetail extends Model
 
     /**
      * Scope: Filter detail berdasarkan condition
-     * 
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $condition
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeByCondition($query, $condition)
     {
@@ -139,9 +136,6 @@ class TransactionDetail extends Model
 
     /**
      * Scope: Filter detail yang lolos QC
-     * 
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeQcPassed($query)
     {
@@ -149,33 +143,25 @@ class TransactionDetail extends Model
     }
 
     /**
-     * Scope: Filter detail yang ada variance
-     * 
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope: Filter detail yang returnable
      */
-    public function scopeHasVariance($query)
+    public function scopeReturnable($query)
     {
-        return $query->whereNotNull('actual_quantity')
-                    ->whereColumn('actual_quantity', '!=', 'quantity');
+        return $query->where('is_returnable', true);
     }
 
     /**
-     * Scope: Filter detail berdasarkan storage location
-     * 
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $location
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope: Filter detail yang overdue return
      */
-    public function scopeByStorageLocation($query, $location)
+    public function scopeOverdueReturn($query)
     {
-        return $query->where('storage_location', 'like', "%{$location}%");
+        return $query->where('is_returnable', true)
+                    ->where('is_returned', false)
+                    ->where('return_due_date', '<', now());
     }
 
     /**
-     * Accessor: Get condition dalam bentuk label
-     * 
-     * @return string
+     * Accessor: Get condition label
      */
     public function getConditionLabelAttribute()
     {
@@ -183,58 +169,62 @@ class TransactionDetail extends Model
     }
 
     /**
-     * Accessor: Get quantity variance (actual - planned)
-     * 
-     * @return float|null
+     * Accessor: Get urgency label
      */
-    public function getQuantityVarianceAttribute()
+    public function getUrgencyLabelAttribute()
     {
-        if ($this->actual_quantity !== null) {
-            return $this->actual_quantity - $this->quantity;
+        return self::URGENCIES[$this->urgency] ?? $this->urgency;
+    }
+
+    /**
+     * Accessor: Get quantity variance (approved vs requested)
+     */
+    public function getApprovalVarianceAttribute()
+    {
+        if ($this->approved_quantity !== null) {
+            return $this->approved_quantity - $this->requested_quantity;
         }
         return null;
     }
 
     /**
-     * Accessor: Get variance percentage
-     * 
-     * @return float|null
+     * Accessor: Get issue variance (issued vs approved)
      */
-    public function getVariancePercentageAttribute()
+    public function getIssueVarianceAttribute()
     {
-        if ($this->actual_quantity !== null && $this->quantity > 0) {
-            return round((($this->actual_quantity - $this->quantity) / $this->quantity) * 100, 2);
+        if ($this->issued_quantity !== null) {
+            $baseQuantity = $this->approved_quantity ?? $this->requested_quantity;
+            return $this->issued_quantity - $baseQuantity;
         }
         return null;
     }
 
     /**
-     * Accessor: Get net price per unit (setelah discount dan tax)
-     * 
-     * @return float
+     * Accessor: Get receive variance (received vs issued)
      */
-    public function getNetUnitPriceAttribute()
+    public function getReceiveVarianceAttribute()
     {
-        $price = $this->unit_price;
-        $price -= $this->discount_amount / $this->quantity; // Discount per unit
-        $price += $this->tax_amount / $this->quantity; // Tax per unit
-        return round($price, 2);
+        if ($this->received_quantity !== null && $this->issued_quantity !== null) {
+            return $this->received_quantity - $this->issued_quantity;
+        }
+        return null;
     }
 
     /**
-     * Accessor: Get net total price (setelah discount dan tax)
-     * 
-     * @return float
+     * Accessor: Get outstanding quantity (yang belum dikembalikan)
      */
-    public function getNetTotalPriceAttribute()
+    public function getOutstandingQuantityAttribute()
     {
-        return $this->total_price - $this->discount_amount + $this->tax_amount;
+        if ($this->is_returnable && !$this->is_returned) {
+            $issuedQty = $this->issued_quantity ?? $this->approved_quantity ?? $this->requested_quantity;
+            $returnedQty = $this->returned_quantity ?? 0;
+            return $issuedQty - $returnedQty;
+        }
+        return 0;
     }
 
     /**
      * Accessor: Get full storage location
-     * 
-     * @return string
      */
     public function getFullStorageLocationAttribute()
     {
@@ -250,8 +240,6 @@ class TransactionDetail extends Model
 
     /**
      * Accessor: Check apakah item akan expired dalam 30 hari
-     * 
-     * @return bool
      */
     public function getIsExpiringSoonAttribute()
     {
@@ -264,8 +252,6 @@ class TransactionDetail extends Model
 
     /**
      * Accessor: Check apakah item sudah expired
-     * 
-     * @return bool
      */
     public function getIsExpiredAttribute()
     {
@@ -277,81 +263,132 @@ class TransactionDetail extends Model
     }
 
     /**
-     * Helper method: Calculate total price berdasarkan quantity dan unit price
-     * 
-     * @return void
+     * Accessor: Check apakah return overdue
      */
-    public function calculateTotalPrice()
+    public function getIsReturnOverdueAttribute()
     {
-        if ($this->quantity && $this->unit_price) {
-            $this->total_price = $this->quantity * $this->unit_price;
+        if (!$this->is_returnable || $this->is_returned) {
+            return false;
         }
-    }
-
-    /**
-     * Helper method: Apply discount ke total price
-     * 
-     * @param float $discountPercentage
-     * @return void
-     */
-    public function applyDiscount($discountPercentage)
-    {
-        $this->discount_percentage = $discountPercentage;
-        $this->discount_amount = ($this->total_price * $discountPercentage) / 100;
-    }
-
-    /**
-     * Helper method: Apply tax ke total price
-     * 
-     * @param float $taxPercentage
-     * @return void
-     */
-    public function applyTax($taxPercentage)
-    {
-        $this->tax_percentage = $taxPercentage;
-        $this->tax_amount = (($this->total_price - $this->discount_amount) * $taxPercentage) / 100;
-    }
-
-    /**
-     * Helper method: Set actual quantity dan variance reason
-     * 
-     * @param float $actualQuantity
-     * @param string|null $reason
-     * @return void
-     */
-    public function setActualQuantity($actualQuantity, $reason = null)
-    {
-        $this->actual_quantity = $actualQuantity;
         
-        if ($actualQuantity != $this->quantity) {
-            $this->variance_reason = $reason ?? 'Quantity variance during execution';
+        return $this->return_due_date && $this->return_due_date < now();
+    }
+
+    /**
+     * Helper method: Calculate total cost berdasarkan quantity dan unit cost
+     */
+    public function calculateTotalCost()
+    {
+        $quantity = $this->issued_quantity ?? $this->approved_quantity ?? $this->requested_quantity;
+        if ($quantity && $this->unit_cost) {
+            $this->total_cost = $quantity * $this->unit_cost;
         }
     }
 
     /**
-     * Helper method: Check apakah detail ini valid untuk execution
-     * 
-     * @return bool
+     * Helper method: Set approved quantity
      */
-    public function isValidForExecution()
+    public function setApprovedQuantity($approvedQuantity, $reason = null)
+    {
+        $this->approved_quantity = $approvedQuantity;
+        
+        if ($approvedQuantity != $this->requested_quantity) {
+            $variance = $approvedQuantity - $this->requested_quantity;
+            $this->notes = ($this->notes ? $this->notes . "\n" : '') . 
+                          "Approval variance: {$variance}. Reason: " . ($reason ?? 'No reason provided');
+        }
+
+        $this->calculateTotalCost();
+    }
+
+    /**
+     * Helper method: Set issued quantity
+     */
+    public function setIssuedQuantity($issuedQuantity, $reason = null)
+    {
+        $this->issued_quantity = $issuedQuantity;
+        
+        $baseQuantity = $this->approved_quantity ?? $this->requested_quantity;
+        if ($issuedQuantity != $baseQuantity) {
+            $variance = $issuedQuantity - $baseQuantity;
+            $this->notes = ($this->notes ? $this->notes . "\n" : '') . 
+                          "Issue variance: {$variance}. Reason: " . ($reason ?? 'No reason provided');
+        }
+
+        $this->calculateTotalCost();
+    }
+
+    /**
+     * Helper method: Set received quantity
+     */
+    public function setReceivedQuantity($receivedQuantity, $reason = null)
+    {
+        $this->received_quantity = $receivedQuantity;
+        
+        if ($this->issued_quantity && $receivedQuantity != $this->issued_quantity) {
+            $variance = $receivedQuantity - $this->issued_quantity;
+            $this->notes = ($this->notes ? $this->notes . "\n" : '') . 
+                          "Receive variance: {$variance}. Reason: " . ($reason ?? 'No reason provided');
+        }
+    }
+
+    /**
+     * Helper method: Process return
+     */
+    public function processReturn($returnedQuantity, $condition = 'good', $notes = null)
+    {
+        if (!$this->is_returnable) {
+            throw new \Exception('Item ini tidak dapat dikembalikan');
+        }
+
+        if ($this->is_returned) {
+            throw new \Exception('Item sudah dikembalikan sebelumnya');
+        }
+
+        $outstandingQty = $this->outstanding_quantity;
+        if ($returnedQuantity > $outstandingQty) {
+            throw new \Exception("Quantity return melebihi outstanding quantity. Outstanding: {$outstandingQty}");
+        }
+
+        $this->returned_quantity = $returnedQuantity;
+        $this->actual_return_date = now();
+        $this->is_returned = ($returnedQuantity >= $outstandingQty);
+        
+        if ($notes) {
+            $this->notes = ($this->notes ? $this->notes . "\n" : '') . "Return: " . $notes;
+        }
+
+        // Update condition jika ada perubahan
+        if ($condition !== $this->condition) {
+            $this->condition = $condition;
+            $this->condition_notes = "Kondisi saat return: " . $condition;
+        }
+
+        return $this->save();
+    }
+
+    /**
+     * Helper method: Check apakah detail valid untuk issue
+     */
+    public function isValidForIssue()
     {
         // Basic validation
-        if (!$this->item || !$this->quantity || $this->quantity <= 0) {
+        if (!$this->item || !$this->approved_quantity || $this->approved_quantity <= 0) {
             return false;
         }
 
-        // Check QC jika required
+        // Check QC
         if (!$this->qc_passed) {
             return false;
         }
 
         // Check condition
-        if (in_array($this->condition, ['damaged', 'expired'])) {
+        if ($this->condition === 'damaged') {
             return false;
         }
 
         // Check expiry untuk outgoing transaction
-        if ($this->transaction->isOutgoing() && $this->is_expired) {
+        if ($this->transaction->isIssue() && $this->is_expired) {
             return false;
         }
 
@@ -360,8 +397,6 @@ class TransactionDetail extends Model
 
     /**
      * Helper method: Get batch info untuk tracking
-     * 
-     * @return array
      */
     public function getBatchInfo()
     {
@@ -376,30 +411,7 @@ class TransactionDetail extends Model
     }
 
     /**
-     * Helper method: Generate label untuk picking/packing
-     * 
-     * @return array
-     */
-    public function generatePickingLabel()
-    {
-        return [
-            'transaction_number' => $this->transaction->transaction_number,
-            'line_number' => $this->line_number,
-            'item_name' => $this->item->name,
-            'item_sku' => $this->item->sku,
-            'quantity' => $this->quantity,
-            'unit' => $this->unit,
-            'batch_number' => $this->batch_number,
-            'storage_location' => $this->full_storage_location,
-            'special_notes' => $this->notes,
-            'qr_code' => $this->generateQRCode(),
-        ];
-    }
-
-    /**
      * Helper method: Generate QR code untuk detail ini
-     * 
-     * @return string
      */
     public function generateQRCode()
     {
@@ -409,8 +421,8 @@ class TransactionDetail extends Model
             'detail_id' => $this->id,
             'item_id' => $this->item_id,
             'batch_number' => $this->batch_number,
-            'quantity' => $this->quantity,
-            'url' => url("/api/transactions/{$this->transaction_id}/details/{$this->id}")
+            'quantity' => $this->requested_quantity,
+            'url' => url("/api/v1/transactions/{$this->transaction_id}/details/{$this->id}")
         ];
 
         return base64_encode(json_encode($qrData));
@@ -425,8 +437,8 @@ class TransactionDetail extends Model
 
         // Event: Sebelum create detail baru
         static::creating(function ($detail) {
-            // Auto calculate total price
-            $detail->calculateTotalPrice();
+            // Auto calculate total cost
+            $detail->calculateTotalCost();
 
             // Set line number otomatis jika tidak diisi
             if (!$detail->line_number) {
@@ -439,21 +451,26 @@ class TransactionDetail extends Model
             if (!$detail->unit && $detail->item) {
                 $detail->unit = $detail->item->unit;
             }
+
+            // Set default approved quantity sama dengan requested
+            if (!$detail->approved_quantity) {
+                $detail->approved_quantity = $detail->requested_quantity;
+            }
         });
 
         // Event: Sebelum update detail
         static::updating(function ($detail) {
-            // Recalculate total price jika quantity atau unit_price berubah
-            if ($detail->isDirty(['quantity', 'unit_price'])) {
-                $detail->calculateTotalPrice();
+            // Recalculate total cost jika quantity atau unit_cost berubah
+            if ($detail->isDirty(['requested_quantity', 'approved_quantity', 'issued_quantity', 'unit_cost'])) {
+                $detail->calculateTotalCost();
             }
         });
 
         // Event: Setelah delete detail
         static::deleted(function ($detail) {
-            // Recalculate total amount di transaction
+            // Recalculate total value di transaction
             if ($detail->transaction) {
-                $detail->transaction->calculateTotalAmount();
+                $detail->transaction->calculateTotalValue();
             }
         });
     }

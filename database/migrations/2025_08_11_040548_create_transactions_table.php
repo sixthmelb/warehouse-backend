@@ -5,16 +5,15 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Migration untuk tabel transactions
- * Menyimpan header transaksi barang masuk/keluar warehouse
+ * Migration untuk tabel transactions - Fixed untuk konsep serah terima
+ * Menyimpan header transaksi serah terima barang warehouse ke department/user
  * 
- * Command: php artisan make:migration create_transactions_table
+ * File: database/migrations/2025_08_11_040548_create_transactions_table.php
  */
 return new class extends Migration
 {
     /**
      * Jalankan migration untuk membuat tabel transactions
-     * Tabel ini menyimpan header/master data transaksi
      */
     public function up(): void
     {
@@ -24,88 +23,116 @@ return new class extends Migration
             
             // Nomor dan identifikasi transaksi
             $table->string('transaction_number')->unique(); // Nomor transaksi (auto generate)
-            $table->string('reference_number')->nullable(); // Nomor referensi eksternal (PO, SO, dll)
+            $table->string('reference_number')->nullable(); // Nomor referensi eksternal (PO, Request, dll)
             
-            // Jenis transaksi
-            $table->enum('type', ['IN', 'OUT']); // IN = Barang Masuk, OUT = Barang Keluar
+            // Jenis transaksi serah terima
+            $table->enum('type', ['RECEIVE', 'ISSUE']); // RECEIVE = Terima dari vendor, ISSUE = Serahkan ke dept/user
             $table->enum('sub_type', [
-                'purchase', 'return_from_customer', 'adjustment_in', 'transfer_in',
-                'sale', 'return_to_vendor', 'adjustment_out', 'transfer_out', 'damaged'
-            ]); // Sub kategori transaksi untuk lebih spesifik
+                // RECEIVE types - barang masuk ke warehouse
+                'purchase_receive', 'return_receive', 'transfer_receive', 'adjustment_receive',
+                // ISSUE types - barang keluar dari warehouse ke user/dept
+                'department_issue', 'user_issue', 'project_issue', 'maintenance_issue', 'return_issue', 'transfer_issue'
+            ]);
             
-            // Relasi dengan entitas lain
-            $table->unsignedBigInteger('warehouse_id'); // Gudang terkait transaksi
-            $table->unsignedBigInteger('vendor_id')->nullable(); // Vendor (untuk transaksi IN dari pembelian)
-            $table->unsignedBigInteger('created_by'); // User yang membuat transaksi
-            $table->unsignedBigInteger('approved_by')->nullable(); // User yang menyetujui transaksi
+            // Relasi dengan entitas
+            $table->unsignedBigInteger('warehouse_id'); // Gudang terkait
+            $table->string('vendor_name')->nullable(); // Nama vendor (untuk RECEIVE)
+            $table->string('vendor_contact')->nullable(); // Kontak vendor
             
-            // Tanggal dan waktu
+            // Penerima (untuk ISSUE transactions)
+            $table->string('recipient_type')->nullable(); // 'department', 'user', 'project'
+            $table->string('recipient_department')->nullable(); // Department penerima
+            $table->string('recipient_name')->nullable(); // Nama penerima
+            $table->string('recipient_employee_id')->nullable(); // Employee ID penerima
+            $table->string('recipient_phone')->nullable(); // Telepon penerima
+            $table->string('recipient_email')->nullable(); // Email penerima
+            
+            // Request information (untuk ISSUE)
+            $table->string('request_number')->nullable(); // Nomor request dari department/user
+            $table->text('request_purpose')->nullable(); // Tujuan request
+            $table->enum('priority', ['low', 'normal', 'high', 'urgent'])->default('normal');
+            
+            // Project information (jika untuk project)
+            $table->string('project_code')->nullable();
+            $table->string('project_name')->nullable();
+            $table->string('cost_center')->nullable();
+            
+            // Users workflow
+            $table->unsignedBigInteger('created_by'); // User yang membuat
+            $table->unsignedBigInteger('approved_by')->nullable(); // User yang approve
+            $table->unsignedBigInteger('issued_by')->nullable(); // User yang mengeluarkan barang
+            $table->unsignedBigInteger('received_by')->nullable(); // User yang menerima barang
+            
+            // Tanggal workflow
             $table->date('transaction_date'); // Tanggal transaksi
-            $table->datetime('planned_date')->nullable(); // Tanggal rencana eksekusi
-            $table->datetime('executed_date')->nullable(); // Tanggal actual eksekusi
+            $table->datetime('requested_date')->nullable(); // Tanggal request
+            $table->datetime('approved_date')->nullable(); // Tanggal approval
+            $table->datetime('issued_date')->nullable(); // Tanggal barang dikeluarkan
+            $table->datetime('received_date')->nullable(); // Tanggal barang diterima
             
-            // Status transaksi
-            $table->enum('status', ['draft', 'pending', 'approved', 'executed', 'cancelled'])
+            // Status workflow
+            $table->enum('status', ['draft', 'requested', 'approved', 'issued', 'received', 'completed', 'cancelled'])
                   ->default('draft');
             
-            // Informasi finansial (opsional)
-            $table->decimal('total_amount', 15, 2)->nullable(); // Total nilai transaksi
-            $table->decimal('tax_amount', 15, 2)->nullable(); // Jumlah pajak
-            $table->decimal('discount_amount', 15, 2)->nullable(); // Jumlah diskon
-            $table->string('currency', 3)->default('IDR'); // Mata uang
+            // Return management
+            $table->boolean('is_returnable')->default(false); // Apakah barang harus dikembalikan
+            $table->date('return_due_date')->nullable(); // Tanggal deadline return
+            $table->enum('return_status', ['not_required', 'pending', 'partial', 'completed', 'overdue'])->nullable();
             
-            // Informasi pengiriman/penerima (untuk transaksi OUT)
-            $table->string('recipient_name')->nullable(); // Nama penerima barang
-            $table->string('recipient_phone')->nullable(); // Telepon penerima
-            $table->text('delivery_address')->nullable(); // Alamat pengiriman
-            $table->string('delivery_method')->nullable(); // Metode pengiriman
-            $table->string('tracking_number')->nullable(); // Nomor resi pengiriman
+            // Delivery information
+            $table->text('delivery_address')->nullable();
+            $table->string('delivery_method')->nullable(); // pickup, delivery, courier
+            $table->string('tracking_number')->nullable();
             
-            // Dokumen pendukung
-            $table->json('documents')->nullable(); // Array dokumen pendukung (JSON)
-            $table->text('notes')->nullable(); // Catatan transaksi
-            $table->text('approval_notes')->nullable(); // Catatan approval
-            $table->text('execution_notes')->nullable(); // Catatan eksekusi
+            // Financial (opsional untuk cost tracking)
+            $table->decimal('total_estimated_value', 15, 2)->nullable();
+            $table->decimal('total_actual_value', 15, 2)->nullable();
+            $table->string('currency', 3)->default('IDR');
+            
+            // Documents dan approval
+            $table->json('documents')->nullable(); // Array dokumen pendukung
+            $table->text('notes')->nullable();
+            $table->text('approval_notes')->nullable();
+            $table->text('issue_notes')->nullable();
+            $table->text('receive_notes')->nullable();
+            
+            // Special handling
+            $table->boolean('is_emergency')->default(false);
+            $table->text('emergency_reason')->nullable();
+            $table->boolean('requires_inspection')->default(false);
             
             // Metadata
-            $table->json('metadata')->nullable(); // Data tambahan dalam format JSON
+            $table->json('metadata')->nullable();
             
             // Audit trail
-            $table->timestamps(); // created_at, updated_at
-            $table->softDeletes(); // deleted_at untuk soft delete
+            $table->timestamps();
+            $table->softDeletes();
             
             // Foreign key constraints
-            $table->foreign('warehouse_id')->references('id')->on('warehouses')
-                  ->onDelete('restrict');
-            $table->foreign('vendor_id')->references('id')->on('vendors')
-                  ->onDelete('restrict');
-            $table->foreign('created_by')->references('id')->on('users')
-                  ->onDelete('restrict');
-            $table->foreign('approved_by')->references('id')->on('users')
-                  ->onDelete('restrict');
+            $table->foreign('warehouse_id')->references('id')->on('warehouses')->onDelete('restrict');
+            $table->foreign('created_by')->references('id')->on('users')->onDelete('restrict');
+            $table->foreign('approved_by')->references('id')->on('users')->onDelete('restrict');
+            $table->foreign('issued_by')->references('id')->on('users')->onDelete('restrict');
+            $table->foreign('received_by')->references('id')->on('users')->onDelete('restrict');
             
-            // Index untuk optimasi query
+            // Indexes
             $table->index('transaction_number');
-            $table->index('reference_number');
             $table->index('type');
             $table->index('sub_type');
             $table->index('status');
             $table->index('warehouse_id');
-            $table->index('vendor_id');
-            $table->index('created_by');
+            $table->index('recipient_department');
+            $table->index('project_code');
             $table->index('transaction_date');
-            $table->index('planned_date');
-            $table->index('executed_date');
-            
-            // Composite indexes untuk query yang sering digunakan
-            $table->index(['warehouse_id', 'type', 'status']);
-            $table->index(['transaction_date', 'type']);
-            $table->index(['vendor_id', 'type']);
+            $table->index('priority');
+            $table->index(['type', 'status']);
+            $table->index(['warehouse_id', 'type']);
+            $table->index(['recipient_department', 'status']);
         });
     }
 
     /**
-     * Rollback migration - hapus tabel transactions
+     * Rollback migration
      */
     public function down(): void
     {

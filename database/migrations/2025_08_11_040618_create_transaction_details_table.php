@@ -5,17 +5,15 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Migration untuk tabel transaction_details
- * Menyimpan detail item dalam setiap transaksi warehouse
- * Relasi: One transaction has many transaction details
+ * Migration untuk tabel transaction_details - Fixed untuk serah terima
+ * Menyimpan detail item dalam setiap transaksi serah terima warehouse
  * 
- * Command: php artisan make:migration create_transaction_details_table
+ * File: database/migrations/2025_08_11_040618_create_transaction_details_table.php
  */
 return new class extends Migration
 {
     /**
      * Jalankan migration untuk membuat tabel transaction_details
-     * Tabel ini menyimpan detail barang dalam setiap transaksi
      */
     public function up(): void
     {
@@ -27,55 +25,64 @@ return new class extends Migration
             $table->unsignedBigInteger('transaction_id'); // Foreign key ke transactions
             $table->unsignedBigInteger('item_id'); // Foreign key ke items
             
-            // Informasi quantity dan unit
-            $table->decimal('quantity', 15, 2); // Jumlah barang (bisa decimal untuk liquid/weight items)
-            $table->string('unit'); // Satuan (pcs, kg, liter, dll) - copy dari items untuk history
-            $table->decimal('unit_weight', 8, 2)->nullable(); // Berat per unit (untuk kalkulasi)
+            // Informasi quantity dan unit untuk serah terima
+            $table->decimal('requested_quantity', 15, 2); // Jumlah yang diminta
+            $table->decimal('approved_quantity', 15, 2)->nullable(); // Jumlah yang disetujui
+            $table->decimal('issued_quantity', 15, 2)->nullable(); // Jumlah yang dikeluarkan
+            $table->decimal('received_quantity', 15, 2)->nullable(); // Jumlah yang diterima
+            $table->string('unit'); // Satuan (pcs, kg, liter, dll)
+            $table->decimal('unit_weight', 8, 2)->nullable(); // Berat per unit
             
             // Batch dan serial tracking
             $table->string('batch_number')->nullable(); // Nomor batch barang
-            $table->string('serial_number')->nullable(); // Serial number untuk item yang memerlukan
-            $table->date('expiry_date')->nullable(); // Tanggal expired (jika ada)
+            $table->string('serial_number')->nullable(); // Serial number
+            $table->date('expiry_date')->nullable(); // Tanggal expired
             $table->date('manufacture_date')->nullable(); // Tanggal produksi
             
-            // Pricing information (snapshot pada saat transaksi)
-            $table->decimal('unit_price', 15, 2)->nullable(); // Harga per unit saat transaksi
-            $table->decimal('total_price', 15, 2)->nullable(); // Total harga (quantity x unit_price)
-            $table->decimal('discount_percentage', 5, 2)->default(0); // Persentase diskon
-            $table->decimal('discount_amount', 15, 2)->default(0); // Nominal diskon
-            $table->decimal('tax_percentage', 5, 2)->default(0); // Persentase pajak
-            $table->decimal('tax_amount', 15, 2)->default(0); // Nominal pajak
+            // Pricing information (untuk tracking cost)
+            $table->decimal('unit_cost', 15, 2)->nullable(); // Harga per unit
+            $table->decimal('total_cost', 15, 2)->nullable(); // Total cost
+            
+            // Request details (untuk ISSUE transactions)
+            $table->text('request_reason')->nullable(); // Alasan request item ini
+            $table->date('needed_date')->nullable(); // Tanggal dibutuhkan
+            $table->enum('urgency', ['low', 'normal', 'high', 'critical'])->default('normal');
+            $table->string('usage_purpose')->nullable(); // Tujuan penggunaan
             
             // Storage location dalam warehouse
             $table->string('storage_location')->nullable(); // Lokasi penyimpanan (rak, zona, dll)
-            $table->string('storage_zone')->nullable(); // Zone storage (A1, B2, dll)
+            $table->string('storage_zone')->nullable(); // Zone storage
             $table->string('storage_rack')->nullable(); // Nomor rak
-            $table->string('storage_level')->nullable(); // Level rak (1, 2, 3, dll)
+            $table->string('storage_level')->nullable(); // Level rak
             
             // Quality control dan kondisi barang
-            $table->enum('condition', ['good', 'damaged', 'expired', 'returned'])->default('good');
-            $table->text('condition_notes')->nullable(); // Catatan kondisi barang
-            $table->boolean('qc_passed')->default(true); // Apakah lolos quality control
-            $table->text('qc_notes')->nullable(); // Catatan quality control
+            $table->enum('condition', ['new', 'good', 'fair', 'damaged'])->default('good');
+            $table->text('condition_notes')->nullable(); // Catatan kondisi
+            $table->boolean('qc_passed')->default(true); // QC lolos atau tidak
+            $table->text('qc_notes')->nullable(); // Catatan QC
             
-            // Informasi tambahan untuk tracking
-            $table->integer('line_number')->default(1); // Nomor urut line dalam transaksi
-            $table->decimal('actual_quantity', 15, 2)->nullable(); // Quantity actual (jika berbeda dari planned)
-            $table->text('variance_reason')->nullable(); // Alasan jika ada perbedaan quantity
+            // Return management (untuk barang yang harus dikembalikan)
+            $table->boolean('is_returnable')->default(false); // Harus dikembalikan
+            $table->date('return_due_date')->nullable(); // Deadline return
+            $table->enum('return_condition_expected', ['same', 'good', 'any'])->default('same');
+            $table->boolean('is_returned')->default(false); // Sudah dikembalikan
+            $table->date('actual_return_date')->nullable(); // Tanggal actual return
+            $table->decimal('returned_quantity', 15, 2)->nullable(); // Quantity yang dikembalikan
             
-            // Metadata dan custom fields
-            $table->json('custom_attributes')->nullable(); // Custom attributes per item
-            $table->text('notes')->nullable(); // Catatan spesifik untuk line item ini
+            // Informasi tambahan
+            $table->integer('line_number')->default(1); // Nomor urut line
+            $table->text('notes')->nullable(); // Catatan spesifik line item
+            $table->json('custom_attributes')->nullable(); // Custom attributes
             
             // Audit trail
-            $table->timestamps(); // created_at, updated_at
-            $table->softDeletes(); // deleted_at untuk soft delete
+            $table->timestamps();
+            $table->softDeletes();
             
             // Foreign key constraints
             $table->foreign('transaction_id')->references('id')->on('transactions')
-                  ->onDelete('cascade'); // Jika transaksi dihapus, detail ikut terhapus
+                  ->onDelete('cascade');
             $table->foreign('item_id')->references('id')->on('items')
-                  ->onDelete('restrict'); // Tidak boleh hapus item jika masih ada di transaksi
+                  ->onDelete('restrict');
             
             // Index untuk optimasi query
             $table->index('transaction_id');
@@ -86,20 +93,21 @@ return new class extends Migration
             $table->index('condition');
             $table->index('storage_location');
             $table->index('line_number');
+            $table->index('is_returnable');
+            $table->index('return_due_date');
             
-            // Composite indexes untuk query yang sering digunakan
-            $table->index(['transaction_id', 'line_number']); // Untuk sorting line dalam transaksi
-            $table->index(['item_id', 'batch_number']); // Untuk tracking batch per item
-            $table->index(['item_id', 'expiry_date']); // Untuk monitoring expired items
-            $table->index(['storage_location', 'storage_zone']); // Untuk pencarian lokasi
+            // Composite indexes
+            $table->index(['transaction_id', 'line_number']);
+            $table->index(['item_id', 'batch_number']);
+            $table->index(['storage_location', 'storage_zone']);
             
-            // Unique constraint untuk mencegah duplicate line dalam transaksi yang sama
+            // Unique constraint untuk line number per transaksi
             $table->unique(['transaction_id', 'line_number'], 'unique_transaction_line');
         });
     }
 
     /**
-     * Rollback migration - hapus tabel transaction_details
+     * Rollback migration
      */
     public function down(): void
     {
